@@ -1,62 +1,74 @@
-module Main (main) where
+{-# LANGUAGE OverloadedStrings #-}
 
-import Control.Monad (when)
-import Data.Function ((&))
-import Options.Applicative
-import Streamly.Data.Fold (Fold, Tee (..))
-import qualified Streamly.Data.Fold as Fold
-import qualified Streamly.Data.Stream as Stream
-import qualified Streamly.FileSystem.File as File
-import Streamly.Unicode.Stream as UnicodeStream
-import System.IO
+module Main where
 
-data WCOptions = WCOptions
-  { countBytes :: Bool,
-    countChars :: Bool,
-    countLines :: Bool,
-    filePath :: FilePath
+import Control.Monad (filterM)
+import qualified Data.Map as M
+import qualified Data.Text as T
+import qualified Data.Text.IO as TIO
+import Json (LanguageInfo (..), decodeJsonFile, languages, transformMap)
+import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
+import System.Environment (getArgs)
+import System.FilePath (takeExtension, (</>))
+import Text.Regex.TDFA ((=~))
+
+data FileStats = FileStats
+  { filePath :: FilePath,
+    lineCount :: Int,
+    commentLineCount :: Int,
+    blankLineCount :: Int,
+    languageName :: Maybe String
   }
   deriving (Show)
 
-wcOptionsParser :: Parser WCOptions
-wcOptionsParser =
-  WCOptions
-    <$> switch (long "bytes" <> short 'c' <> help "Count bytes")
-    <*> switch (long "chars" <> short 'm' <> help "Count chars")
-    <*> switch (long "lines" <> short 'l' <> help "Count lines")
-    <*> argument str (metavar "FILE" <> help "File to process")
+countLines :: FilePath -> [String] -> IO (Int, Int, Int)
+countLines file commentPrefixes = do
+  content <- TIO.readFile file
+  let linesList = T.lines content
+      total = length linesList
+      commented = length (filter (\line -> any ((`T.isPrefixOf` line) . T.pack) commentPrefixes) linesList)
+      blank = length (filter T.null linesList)
+  return (total, commented, blank)
 
-countLines'' :: Int -> Char -> Int
-countLines'' n ch = if ch == '\n' then n + 1 else n
+getFilesRecursively :: Maybe String -> FilePath -> IO [FilePath]
+getFilesRecursively excludePattern dir = do
+  contents <- listDirectory dir
+  let paths = map (dir </>) contents
+  files <- filterM doesFileExist paths
+  dirs <- filterM doesDirectoryExist paths
+  let filteredFiles = case excludePattern of
+        Just pat -> filter (not . (=~ pat)) files
+        Nothing -> files
+  nestedFiles <- fmap concat (mapM (getFilesRecursively excludePattern) dirs)
+  return $ filteredFiles ++ nestedFiles
 
-countLines' :: (Monad m) => Fold m Char Int
-countLines' = Fold.foldl' countLines'' 0
+processFile :: M.Map String LanguageInfo -> FilePath -> IO FileStats
+processFile langMap f = do
+  let ext = drop 1 (takeExtension f) -- Remove leading dot
+      langInfo = M.lookup ext langMap
+      commentPrefixes = maybe [] lineComment' langInfo
+      langName = fmap name' langInfo
+  (c, p, b) <- countLines f commentPrefixes
+  return (FileStats f c p b langName)
 
-countDecoded :: Fold IO Char (Int, Int)
-countDecoded = unTee $ (,) <$> Tee Fold.length <*> Tee countLines'
+countLinesInDirs :: M.Map String LanguageInfo -> Maybe String -> [FilePath] -> IO ()
+countLinesInDirs langMap exclude dirs = do
+  allFiles <- concat <$> mapM (getFilesRecursively exclude) dirs
+  results <- mapM (processFile langMap) allFiles
+  mapM_ (\(FileStats f c p b lang) -> putStrLn $ f ++ ": " ++ show c ++ " lines, " ++ show p ++ " comments, " ++ show b ++ " blanks, Language: " ++ show lang) results
 
-processFile :: WCOptions -> IO ()
-processFile opts = do
-  let file = filePath opts
-  handle <- openFile file ReadMode
-
-  let stream = File.read file
-
-  numbytes <- stream & Stream.fold Fold.length
-  (numchars, numlines) <- stream & UnicodeStream.decodeUtf8 & Stream.fold countDecoded
-
-  hClose handle
-
-  when (countLines opts) $ print numlines
-  when (countChars opts) $ print numchars
-  when (countBytes opts) $ print numbytes
 
 main :: IO ()
-main = execParser opts >>= processFile
-  where
-    opts =
-      info
-        (wcOptionsParser <**> helper)
-        ( fullDesc
-            <> progDesc "wc utility implemented in Haskell"
-        )
+main = do
+  args <- getArgs
+  result <- decodeJsonFile "languages.json"
+  case result of
+    Left err -> putStrLn $ "Error: " ++ err
+    Right l -> do
+      let langMap = transformMap (languages l)
+      let (exclude, remainingArgs) = case args of
+            ("--exclude" : pattern : rest) -> (Just pattern, rest)
+            _ -> (Nothing, args)
+      case remainingArgs of
+        dirs | not (null dirs) -> countLinesInDirs langMap exclude dirs
+        _ -> putStrLn "Usage: lc <directory1> <directory2>"

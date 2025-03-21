@@ -1,6 +1,6 @@
 cabal-version:      3.0
 
-name:               haskell-streaming-wc-ninaiad
+name:               lc
 version:            0.1.0.0
 license:            MIT
 license-file:       LICENSE
@@ -12,15 +12,24 @@ extra-doc-files:    CHANGELOG.md
 common warnings
     ghc-options: -Wall
 
-executable wc
+executable lc
     import:           warnings
 
     main-is:          Main.hs
 
+    other-modules: Json
+
     build-depends:
         base,
         optparse-applicative,
-        streamly-core
+        text,
+        directory,
+        filepath,
+        bytestring,
+        aeson,
+        containers,
+        unordered-containers,
+        regex-tdfa
 
     hs-source-dirs:   app
 

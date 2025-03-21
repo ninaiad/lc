@@ -1,0 +1,33 @@
+{
+    "languages": {
+      "Abap": {
+        "name": "ABAP",
+        "lineComment": ["*", "\\\""],
+        "extensions": ["abap"]
+      },
+      "ABNF": {
+        "lineComment": [";"],
+        "extensions": ["abnf"]
+      },
+      "ActionScript": {
+        "lineComment": ["//"],
+        "quotes": [["\\\"", "\\\""]],
+        "extensions": ["as"]
+      },
+      "Ada": {
+        "lineComment": ["--"],
+        "extensions": ["ada", "adb", "ads", "pad"]
+      },
+      "Haskell": {
+        "nested": true,
+        "lineComment": ["--"],
+        "extensions": ["hs"]
+      },
+      "Text": {
+        "name": "Plain Text",
+        "literate": true,
+        "mime": ["text/plain"],
+        "extensions": ["text", "txt"]
+      }
+    }
+  }
