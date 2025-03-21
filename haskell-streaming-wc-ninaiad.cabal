@@ -1,0 +1,27 @@
+cabal-version:      3.0
+
+name:               haskell-streaming-wc-ninaiad
+version:            0.1.0.0
+license:            MIT
+license-file:       LICENSE
+author:             Nina Gulevich
+maintainer:         nina.m.gulevich@gmail.com
+build-type:         Simple
+extra-doc-files:    CHANGELOG.md
+
+common warnings
+    ghc-options: -Wall
+
+executable wc
+    import:           warnings
+
+    main-is:          Main.hs
+
+    build-depends:
+        base,
+        optparse-applicative,
+        streamly-core
+
+    hs-source-dirs:   app
+
+    default-language: Haskell2010
