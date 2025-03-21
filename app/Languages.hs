@@ -1,20 +1,20 @@
 {-# LANGUAGE DeriveGeneric #-}
 
-module Json (LanguageInfo (..), languages, decodeJsonFile, transformMap) where
+module Languages (LanguageInfo (..), languages, decodeJsonFile, transformMap) where
 
 import Data.Aeson
   ( FromJSON (parseJSON),
     eitherDecode,
     withObject,
+    (.!=),
     (.:),
     (.:?),
-    (.!=)
   )
 import Data.Aeson.Key (fromString)
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
-import GHC.Generics
+import GHC.Generics (Generic)
 
 data Language = Language
   { name :: Maybe String,
@@ -30,10 +30,11 @@ data LanguageInfo = LanguageInfo
   deriving (Show)
 
 instance FromJSON Language where
-  parseJSON = withObject "Language" $ \v -> Language
-    <$> v .:? fromString "name"
-    <*> (v .:? fromString "lineComment" .!= [])
-    <*> v .: fromString "extensions"
+  parseJSON = withObject "Language" $ \v ->
+    Language
+      <$> v .:? fromString "name"
+      <*> (v .:? fromString "lineComment" .!= [])
+      <*> v .: fromString "extensions"
 
 newtype Languages = Languages
   { languages :: M.Map String Language
@@ -56,4 +57,4 @@ transformMap langMap = M.fromList $ concatMap extractEntries (M.toList langMap)
     extractEntries :: (String, Language) -> [(String, LanguageInfo)]
     extractEntries (key, lang) =
       let nameValue = fromMaybe key (name lang)
-      in [ (ext, LanguageInfo nameValue (lineComment lang)) | ext <- extensions lang ]
+       in [(ext, LanguageInfo nameValue (lineComment lang)) | ext <- extensions lang]

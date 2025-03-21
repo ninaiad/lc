@@ -17,7 +17,7 @@ executable lc
 
     main-is:          Main.hs
 
-    other-modules: Json
+    other-modules: Languages, Statistics
 
     build-depends:
         base,
