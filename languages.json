@@ -1,33 +1,72 @@
 {
-    "languages": {
-      "Abap": {
-        "name": "ABAP",
-        "lineComment": ["*", "\\\""],
-        "extensions": ["abap"]
-      },
-      "ABNF": {
-        "lineComment": [";"],
-        "extensions": ["abnf"]
-      },
-      "ActionScript": {
-        "lineComment": ["//"],
-        "quotes": [["\\\"", "\\\""]],
-        "extensions": ["as"]
-      },
-      "Ada": {
-        "lineComment": ["--"],
-        "extensions": ["ada", "adb", "ads", "pad"]
-      },
-      "Haskell": {
-        "nested": true,
-        "lineComment": ["--"],
-        "extensions": ["hs"]
-      },
-      "Text": {
-        "name": "Plain Text",
-        "literate": true,
-        "mime": ["text/plain"],
-        "extensions": ["text", "txt"]
-      }
+  "languages": {
+    "Abap": {
+      "name": "ABAP",
+      "lineComment": ["*", "\\\""],
+      "extensions": ["abap"]
+    },
+    "ABNF": {
+      "lineComment": [";"],
+      "extensions": ["abnf"]
+    },
+    "ActionScript": {
+      "lineComment": ["//"],
+      "multiLineComments": [["/*", "*/"]],
+      "quotes": [["\\\"", "\\\""]],
+      "extensions": ["as"]
+    },
+    "Ada": {
+      "lineComment": ["--"],
+      "extensions": ["ada", "adb", "ads", "pad"]
+    },
+    "Haskell": {
+      "nested": true,
+      "lineComment": ["--"],
+      "multiLineComments": [["{-", "-}"]],
+      "extensions": ["hs"]
+    },
+    "Text": {
+      "name": "Plain Text",
+      "literate": true,
+      "mime": ["text/plain"],
+      "extensions": ["text", "txt"]
+    },
+    "Cpp": {
+      "name": "C++",
+      "lineComment": ["//"],
+      "multiLineComments": [["/*", "*/"]],
+      "quotes": [["\\\"", "\\\""]],
+      "verbatim_quotes": [["R\\\"(", ")\\\""]],
+      "extensions": ["cc", "cpp", "cxx", "c++", "pcc", "tpp"]
+    },
+    "CppHeader": {
+      "name": "C++ Header",
+      "lineComment": ["//"],
+      "multiLineComments": [["/*", "*/"]],
+      "quotes": [["\\\"", "\\\""]],
+      "extensions": ["h", "hh", "hpp", "hxx", "inl", "ipp"]
+    },
+    "Python": {
+      "lineComment": ["#"],
+      "doc_quotes": [["\\\"\\\"\\\"", "\\\"\\\"\\\""], ["'''", "'''"]],
+      "quotes": [["\\\"", "\\\""], ["'", "'"]],
+      "env": ["python", "python2", "python3"],
+      "mime": ["text/x-python"],
+      "extensions": ["py", "pyw", "pyi"]
+    },
+    "Markdown": {
+      "literate": true,
+      "important_syntax": ["```"],
+      "extensions": ["md", "markdown"]
+    },
+    "Rust": {
+      "lineComment": ["//"],
+      "multiLineComments": [["/*", "*/"]],
+      "nested": true,
+      "important_syntax": ["///", "//!"],
+      "extensions": ["rs"],
+      "quotes": [["\\\"", "\\\""], ["#\\\"", "\\\"#"]],
+      "verbatim_quotes": [["r##\\\"", "\\\"##"], ["r#\\\"", "\\\"#"]]
     }
   }
+}

@@ -12,7 +12,8 @@ data CliOptions = CliOptions
   { filePaths :: [FilePath],
     byFile :: Bool,
     exportType :: ExportType,
-    exclude :: Maybe String
+    exclude :: Maybe String,
+    includeHidden :: Bool
   }
   deriving (Show)
 
@@ -22,7 +23,7 @@ exportTypeParser =
     readExportType
     ( long "export"
         <> metavar "EXPORT_TYPE"
-        <> help "Specify the export type"
+        <> help "Specify the export type (Tabular, Json or Yaml)"
         <> value Tabular
         <> showDefaultWith (const "Tabular")
     )
@@ -48,6 +49,7 @@ cliOptionsParser =
     <*> switch (long "files" <> short 'f' <> help "Process by file")
     <*> exportTypeParser
     <*> excludePathsParser
+    <*> switch (long "include-hidden" <> help "Include hidden files and directories")
 
 main :: IO ()
 main = do
@@ -61,8 +63,9 @@ main = do
       let dirs = filePaths opts
       let printByFIle = byFile opts
       let exportType' = exportType opts
+      let includeHidden' = includeHidden opts
 
-      results <- countLinesInDirs langMap excludePaths dirs
+      results <- countLinesInDirs langMap excludePaths includeHidden' dirs
       formatStatistics results printByFIle exportType'
   where
     optsParser =

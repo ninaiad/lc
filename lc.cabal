@@ -17,19 +17,22 @@ executable lc
 
     main-is:          Main.hs
 
-    other-modules: Languages, Statistics
+    other-modules:
+        Languages,
+        Statistics
 
     build-depends:
+        aeson,
+        aeson-pretty,
         base,
-        optparse-applicative,
-        text,
+        bytestring,
+        containers,
         directory,
         filepath,
-        bytestring,
-        aeson,
         HsYAML,
-        containers,
+        optparse-applicative,
         regex-tdfa,
+        text,
         tuple
 
     hs-source-dirs:   app

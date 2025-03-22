@@ -7,13 +7,14 @@ module Statistics (countLinesInDirs, formatStatistics, ExportType (..)) where
 
 import Control.Monad (filterM, when)
 import Data.Aeson (ToJSON (..), defaultOptions, encode, genericToEncoding)
-import qualified Data.ByteString.Lazy as B
+import qualified Data.ByteString as B
+import qualified Data.ByteString.Char8 as C8
+import qualified Data.ByteString.Lazy as BSL
 import Data.Data (Data)
 import Data.List (groupBy, sortOn)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
-import qualified Data.Text.IO as TIO
 import Data.Tuple.Select
 import Data.YAML
 import GHC.Generics (Generic)
@@ -68,8 +69,8 @@ aggregateStats stats =
         )
         grouped
 
-computeWidths :: [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])] -> (Int, Int, Int, Int, Int, Int)
-computeWidths rows =
+computeWidths :: [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])] -> Bool -> (Int, Int, Int, Int, Int, Int)
+computeWidths rows byFile =
   let langWBase = maximum $ map (length . sel1) rows ++ [8] -- At least "Language"
       fileW = maximum $ map (length . show . sel2) rows ++ [5]
       lineW = maximum $ map (length . show . sel3) rows ++ [5]
@@ -77,10 +78,15 @@ computeWidths rows =
       comW = maximum $ map (length . show . sel5) rows ++ [8]
       blankW = maximum $ map (length . show . sel6) rows ++ [6]
 
-      longestFilePath = maximum $ 0 : concatMap (\(_, _, _, _, _, _, files) -> map (length . sel1) files) rows
-      totalMinWidth = langWBase + fileW
-      extraNeeded = max 0 (longestFilePath - totalMinWidth)
-      langW = langWBase + extraNeeded
+      langW =
+        if byFile
+          then
+            let longestFilePath = maximum $ 0 : concatMap (\(_, _, _, _, _, _, files) -> map (length . sel1) files) rows
+                totalMinWidth = langWBase + fileW
+                extraNeeded = max 0 (longestFilePath - totalMinWidth)
+             in langWBase + extraNeeded
+          else
+            langWBase
    in (langW, fileW, lineW, codeW, comW, blankW)
 
 headerFormat :: Int -> Int -> Int -> Int -> Int -> Int -> String
@@ -133,7 +139,7 @@ fileFormat pathW lineW codeW comW blankW filepath lines' code comments =
 printStatsTable :: Bool -> [FileStats] -> IO ()
 printStatsTable byFile stats = do
   let aggregated = aggregateStats stats
-      (langW, fileW, lineW, codeW, comW, blankW) = computeWidths aggregated
+      (langW, fileW, lineW, codeW, comW, blankW) = computeWidths aggregated byFile
       totalFiles = sum [f | (_, f, _, _, _, _, _) <- aggregated]
       totalLines = sum [l | (_, _, l, _, _, _, _) <- aggregated]
       totalCode = sum [c | (_, _, _, c, _, _, _) <- aggregated]
@@ -170,24 +176,28 @@ printStatsTable byFile stats = do
 
 countLines :: FilePath -> [String] -> IO (Int, Int, Int)
 countLines file commentPrefixes = do
-  content <- TIO.readFile file
-  let linesList = T.lines content
+  content <- B.readFile file
+  let linesList = C8.lines content
       total = length linesList
-      comments = length (filter (\line -> any ((`T.isPrefixOf` line) . T.pack) commentPrefixes) linesList)
-      blank = length (filter T.null linesList)
+      comments = length (filter (\line -> any ((`C8.isPrefixOf` line) . C8.pack) commentPrefixes) linesList)
+      blank = length (filter C8.null linesList)
   return (total, comments, blank)
 
-getFilesRecursively :: Maybe String -> FilePath -> IO [FilePath]
-getFilesRecursively excludePattern dir = do
+getFilesRecursively :: Maybe String -> Bool -> FilePath -> IO [FilePath]
+getFilesRecursively excludePattern includeHidden dir = do
   contents <- listDirectory dir
-  let paths = map (dir </>) contents
+  let visibleContents = if includeHidden then contents else filter (not . isHidden) contents
+      paths = map (dir </>) visibleContents
   files <- filterM doesFileExist paths
   dirs <- filterM doesDirectoryExist paths
   let filteredFiles = case excludePattern of
         Just pat -> filter (not . (=~ pat)) files
         Nothing -> files
-  nestedFiles <- fmap concat (mapM (getFilesRecursively excludePattern) dirs)
+  nestedFiles <- fmap concat (mapM (getFilesRecursively excludePattern includeHidden) dirs)
   return $ filteredFiles ++ nestedFiles
+  where
+    isHidden ('.' : _) = True
+    isHidden _ = False
 
 processFile :: M.Map String LanguageInfo -> FilePath -> IO FileStats
 processFile langMap f = do
@@ -198,14 +208,14 @@ processFile langMap f = do
   (c, p, b) <- countLines f commentPrefixes
   return (FileStats f c p b langName)
 
-countLinesInDirs :: M.Map String LanguageInfo -> Maybe String -> [FilePath] -> IO [FileStats]
-countLinesInDirs langMap exclude' dirs = do
-  allFiles <- concat <$> mapM (getFilesRecursively exclude') dirs
+countLinesInDirs :: M.Map String LanguageInfo -> Maybe String -> Bool -> [FilePath] -> IO [FileStats]
+countLinesInDirs langMap exclude' includeHidden dirs = do
+  allFiles <- concat <$> mapM (getFilesRecursively exclude' includeHidden) dirs
   mapM (processFile langMap) allFiles
 
 formatStatistics :: [FileStats] -> Bool -> ExportType -> IO ()
 formatStatistics stats printByFile exportType = do
   case exportType of
     Tabular -> printStatsTable printByFile stats
-    Json -> B.putStr (Data.Aeson.encode stats)
-    Yaml -> B.putStr (Data.YAML.encode stats)
+    Json -> BSL.putStr (Data.Aeson.encode stats)
+    Yaml -> BSL.putStr (Data.YAML.encode stats)

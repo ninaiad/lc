@@ -33,7 +33,7 @@ instance FromJSON Language where
   parseJSON = withObject "Language" $ \v ->
     Language
       <$> v .:? "name"
-      <*> (v .:? "line_comment" .!= [])
+      <*> (v .:? "lineComment" .!= [])
       <*> v .: "extensions"
 
 newtype Languages = Languages
