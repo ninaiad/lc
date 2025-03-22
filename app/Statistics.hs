@@ -2,6 +2,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ViewPatterns #-}
 
 module Statistics (countLinesInDirs, formatStatistics, ExportType (..)) where
 
@@ -174,14 +175,37 @@ printStatsTable byFile stats = do
   printf (dataFormat' "Total" totalFiles totalLines totalCode totalComments totalBlanks)
   putStrLn boldSeparator
 
-countLines :: FilePath -> [String] -> IO (Int, Int, Int)
-countLines file commentPrefixes = do
+countLines :: FilePath -> [String] -> [(String, String)] -> IO (Int, Int, Int)
+countLines file commentPrefixes multiLineComments = do
   content <- B.readFile file
   let linesList = C8.lines content
       total = length linesList
-      comments = length (filter (\line -> any ((`C8.isPrefixOf` line) . C8.pack) commentPrefixes) linesList)
-      blank = length (filter C8.null linesList)
-  return (total, comments, blank)
+      comments = length $ filter (\(C8.unpack -> line) -> any ((`C8.isPrefixOf` C8.pack line) . C8.pack) commentPrefixes) linesList
+      blank = length $ filter C8.null linesList
+      multilineCount = countMultiline linesList multiLineComments
+  return (total, comments + multilineCount, blank)
+
+countMultiline :: [C8.ByteString] -> [(String, String)] -> Int
+countMultiline [] _ = 0
+countMultiline (l : ls) multiLineComments =
+  case findMultiline l ls multiLineComments of
+    Just (count, rest) -> count + countMultiline rest multiLineComments
+    Nothing -> countMultiline ls multiLineComments
+
+findMultiline :: C8.ByteString -> [C8.ByteString] -> [(String, String)] -> Maybe (Int, [C8.ByteString])
+findMultiline _ [] _ = Nothing
+findMultiline startLine rest multiLineComments =
+  case [(open, close) | (open, close) <- multiLineComments, C8.pack open `C8.isPrefixOf` startLine] of
+    ((_, close) : _) ->
+      let (count, remaining) = spanUntil (C8.pack close) (startLine : rest)
+       in Just (count, remaining)
+    [] -> Nothing
+
+spanUntil :: C8.ByteString -> [C8.ByteString] -> (Int, [C8.ByteString])
+spanUntil _ [] = (0, [])
+spanUntil end (l : ls)
+  | end `C8.isInfixOf` l = (1, ls)
+  | otherwise = let (c, rest) = spanUntil end ls in (1 + c, rest)
 
 getFilesRecursively :: Maybe String -> Bool -> FilePath -> IO [FilePath]
 getFilesRecursively excludePattern includeHidden dir = do
@@ -204,8 +228,9 @@ processFile langMap f = do
   let ext = drop 1 (takeExtension f)
       langInfo = M.lookup ext langMap
       commentPrefixes = maybe [] lineComment' langInfo
+      multiLineComment' = maybe [] multiLineComment langInfo
       langName = fmap name' langInfo
-  (c, p, b) <- countLines f commentPrefixes
+  (c, p, b) <- countLines f commentPrefixes multiLineComment'
   return (FileStats f c p b langName)
 
 countLinesInDirs :: M.Map String LanguageInfo -> Maybe String -> Bool -> [FilePath] -> IO [FileStats]

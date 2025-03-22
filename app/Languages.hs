@@ -19,13 +19,15 @@ import GHC.Generics (Generic)
 data Language = Language
   { name :: Maybe String,
     lineComment :: [String],
+    multiLineComments :: [(String, String)],
     extensions :: [String]
   }
   deriving (Show, Generic)
 
 data LanguageInfo = LanguageInfo
   { name' :: String,
-    lineComment' :: [String]
+    lineComment' :: [String],
+    multiLineComment :: [(String, String)]
   }
   deriving (Show)
 
@@ -34,6 +36,7 @@ instance FromJSON Language where
     Language
       <$> v .:? "name"
       <*> (v .:? "lineComment" .!= [])
+      <*> (v .:? "multiLineComments" .!= [])
       <*> v .: "extensions"
 
 newtype Languages = Languages
@@ -57,4 +60,4 @@ transformMap langMap = M.fromList $ concatMap extractEntries (M.toList langMap)
     extractEntries :: (String, Language) -> [(String, LanguageInfo)]
     extractEntries (key, lang) =
       let nameValue = fromMaybe key (name lang)
-       in [(ext, LanguageInfo nameValue (lineComment lang)) | ext <- extensions lang]
+       in [(ext, LanguageInfo nameValue (lineComment lang) (multiLineComments lang)) | ext <- extensions lang]
