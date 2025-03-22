@@ -2,42 +2,41 @@
 
 module Main where
 
+import Data.Char (toLower, toUpper)
 import Languages (decodeJsonFile, languages, transformMap)
 import Options.Applicative
-import Statistics (countLinesInDirs, formatStatistics)
+import Statistics (ExportType (..), countLinesInDirs, formatStatistics)
 import Text.Read (readMaybe)
 
-data ExportType = JSON | CBOR deriving (Show, Read, Eq)
-
 data CliOptions = CliOptions
-  { byFile :: Bool,
-    exportType :: Maybe ExportType,
-    filePaths :: [FilePath],
+  { filePaths :: [FilePath],
+    byFile :: Bool,
+    exportType :: ExportType,
     exclude :: Maybe String
   }
   deriving (Show)
 
-exportTypeParser :: Parser (Maybe ExportType)
+exportTypeParser :: Parser ExportType
 exportTypeParser =
-  optional $
-    option
-      readExportType
-      ( long "export"
-          <> short 'e'
-          <> metavar "FORMAT"
-          <> help "Export format (JSON or CBOR)"
-      )
+  option
+    readExportType
+    ( long "export"
+        <> metavar "EXPORT_TYPE"
+        <> help "Specify the export type"
+        <> value Tabular
+        <> showDefaultWith (const "Tabular")
+    )
   where
     readExportType = eitherReader $ \arg ->
-      maybe (Left $ "Invalid export type: " ++ arg) Right (readMaybe arg)
+      maybe (Left $ "Invalid export type: " ++ arg) Right (readMaybe (toUpper (head arg) : (toLower <$> tail arg)))
 
 excludePathsParser :: Parser (Maybe String)
 excludePathsParser =
   optional
     ( strOption
         ( long "exclude"
-            <> metavar "FILE"
-            <> help "File path to exclude"
+            <> metavar "PATTERN"
+            <> help "File path pattern to exclude"
             <> action "file"
         )
     )
@@ -45,13 +44,9 @@ excludePathsParser =
 cliOptionsParser :: Parser CliOptions
 cliOptionsParser =
   CliOptions
-    <$> switch
-      ( long "files"
-          <> short 'f'
-          <> help "Process by file"
-      )
+    <$> some (argument str (metavar "PATHS..."))
+    <*> switch (long "files" <> short 'f' <> help "Process by file")
     <*> exportTypeParser
-    <*> some (argument str (metavar "PATHS..."))
     <*> excludePathsParser
 
 main :: IO ()
@@ -64,9 +59,11 @@ main = do
       let langMap = transformMap (languages l)
       let excludePaths = exclude opts
       let dirs = filePaths opts
+      let printByFIle = byFile opts
+      let exportType' = exportType opts
 
       results <- countLinesInDirs langMap excludePaths dirs
-      formatStatistics results
+      formatStatistics results printByFIle exportType'
   where
     optsParser =
       info

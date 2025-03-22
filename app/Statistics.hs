@@ -1,13 +1,13 @@
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Statistics (countLinesInDirs, formatStatistics) where
+module Statistics (countLinesInDirs, formatStatistics, ExportType (..)) where
 
-import Control.Monad (filterM)
-import Data.Aeson (ToJSON (..), defaultOptions, genericToEncoding)
+import Control.Monad (filterM, when)
+import Data.Aeson (ToJSON (..), defaultOptions, encode, genericToEncoding)
+import qualified Data.ByteString.Lazy as B
 import Data.Data (Data)
 import Data.List (groupBy, sortOn)
 import qualified Data.Map as M
@@ -22,6 +22,8 @@ import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.FilePath (takeExtension, (</>))
 import Text.Printf (printf)
 import Text.Regex.TDFA ((=~))
+
+data ExportType = Tabular | Json | Yaml deriving (Show, Read, Eq)
 
 data FileStats = FileStats
   { filePath :: FilePath,
@@ -50,36 +52,41 @@ instance ToYAML FileStats where
             ln
       ]
 
-aggregateStats :: [FileStats] -> [(String, Int, Int, Int, Int, Int)]
+aggregateStats :: [FileStats] -> [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])]
 aggregateStats stats =
-  let grouped = groupBy (\a b -> languageName a == languageName b) (sortOn languageName stats)
-   in map summarize grouped
-  where
-    summarize :: [FileStats] -> (String, Int, Int, Int, Int, Int)
-    summarize files =
-      let lang = fromMaybe "Unknown" (languageName (head files))
-          fileCount = length files
-          totalLines = sum (map lineCount files)
-          totalComments = sum (map commentLineCount files)
-          totalBlanks = sum (map blankLineCount files)
-       in (lang, fileCount, totalLines, totalLines - totalComments - totalBlanks, totalComments, totalBlanks)
+  let grouped = groupBy (\a b -> languageName a == languageName b) $ sortOn languageName stats
+   in map
+        ( \group ->
+            let lang = fromMaybe "Unknown" (languageName (head group))
+                numFiles = length group
+                totalLines = sum (map lineCount group)
+                totalCode = sum (map (\fs -> lineCount fs - commentLineCount fs - blankLineCount fs) group)
+                totalComments = sum (map commentLineCount group)
+                totalBlanks = sum (map blankLineCount group)
+                fileDetails = [(filePath fs, lineCount fs, lineCount fs - commentLineCount fs - blankLineCount fs, commentLineCount fs, blankLineCount fs) | fs <- group]
+             in (lang, numFiles, totalLines, totalCode, totalComments, totalBlanks, fileDetails)
+        )
+        grouped
 
-computeWidths :: [(String, Int, Int, Int, Int, Int)] -> (Int, Int, Int, Int, Int, Int)
+computeWidths :: [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])] -> (Int, Int, Int, Int, Int, Int)
 computeWidths rows =
-  let langWidth = maximum $ map (length . sel1) rows ++ [8]
-      numWidth selector = maximum $ map (length . show . selector) rows ++ [8]
-   in ( langWidth,
-        numWidth (\(_, f, _, _, _, _) -> f),
-        numWidth (\(_, _, l, _, _, _) -> l),
-        numWidth (\(_, _, _, c, _, _) -> c),
-        numWidth (\(_, _, _, _, com, _) -> com),
-        numWidth (\(_, _, _, _, _, b) -> b)
-      )
+  let langWBase = maximum $ map (length . sel1) rows ++ [8] -- At least "Language"
+      fileW = maximum $ map (length . show . sel2) rows ++ [5]
+      lineW = maximum $ map (length . show . sel3) rows ++ [5]
+      codeW = maximum $ map (length . show . sel4) rows ++ [4]
+      comW = maximum $ map (length . show . sel5) rows ++ [8]
+      blankW = maximum $ map (length . show . sel6) rows ++ [6]
+
+      longestFilePath = maximum $ 0 : concatMap (\(_, _, _, _, _, _, files) -> map (length . sel1) files) rows
+      totalMinWidth = langWBase + fileW
+      extraNeeded = max 0 (longestFilePath - totalMinWidth)
+      langW = langWBase + extraNeeded
+   in (langW, fileW, lineW, codeW, comW, blankW)
 
 headerFormat :: Int -> Int -> Int -> Int -> Int -> Int -> String
 headerFormat langW fileW lineW codeW comW blankW =
   printf
-    " %-*s %-*s %-*s %-*s %-*s %-*s\n"
+    " %-*s %*s %*s %*s %*s %*s\n"
     langW
     ("Language" :: String)
     fileW
@@ -96,7 +103,7 @@ headerFormat langW fileW lineW codeW comW blankW =
 dataFormat :: Int -> Int -> Int -> Int -> Int -> Int -> String -> Int -> Int -> Int -> Int -> Int -> String
 dataFormat langW fileW lineW codeW comW blankW lang files lines' code comments =
   printf
-    " %-*s %-*d %-*d %-*d %-*d %-*d\n"
+    " %-*s %*d %*d %*d %*d %*d\n"
     langW
     lang
     fileW
@@ -109,28 +116,51 @@ dataFormat langW fileW lineW codeW comW blankW lang files lines' code comments =
     comments
     blankW
 
-printStatsTable :: [FileStats] -> IO ()
-printStatsTable stats = do
+fileFormat :: Int -> Int -> Int -> Int -> Int -> String -> Int -> Int -> Int -> Int -> String
+fileFormat pathW lineW codeW comW blankW filepath lines' code comments =
+  printf
+    " %-*s  %*d %*d %*d %*d\n"
+    pathW
+    filepath
+    lineW
+    lines'
+    codeW
+    code
+    comW
+    comments
+    blankW
+
+printStatsTable :: Bool -> [FileStats] -> IO ()
+printStatsTable byFile stats = do
   let aggregated = aggregateStats stats
       (langW, fileW, lineW, codeW, comW, blankW) = computeWidths aggregated
-      totalFiles = sum [f | (_, f, _, _, _, _) <- aggregated]
-      totalLines = sum [l | (_, _, l, _, _, _) <- aggregated]
-      totalCode = sum [c | (_, _, _, c, _, _) <- aggregated]
-      totalComments = sum [com | (_, _, _, _, com, _) <- aggregated]
-      totalBlanks = sum [b | (_, _, _, _, _, b) <- aggregated]
+      totalFiles = sum [f | (_, f, _, _, _, _, _) <- aggregated]
+      totalLines = sum [l | (_, _, l, _, _, _, _) <- aggregated]
+      totalCode = sum [c | (_, _, _, c, _, _, _) <- aggregated]
+      totalComments = sum [com | (_, _, _, _, com, _, _) <- aggregated]
+      totalBlanks = sum [b | (_, _, _, _, _, b, _) <- aggregated]
 
       separator = replicate (langW + fileW + lineW + codeW + comW + blankW + 7) '─'
       boldSeparator = replicate (langW + fileW + lineW + codeW + comW + blankW + 7) '━'
 
   putStrLn boldSeparator
   printf (headerFormat langW fileW lineW codeW comW blankW)
-  putStrLn separator
 
   let dataFormat' = dataFormat langW fileW lineW codeW comW blankW
+  let fileFormat' = fileFormat (langW + fileW) lineW codeW comW blankW
 
   mapM_
-    ( \(lang, files, lines', code, comments, blanks) ->
+    ( \(lang, files, lines', code, comments, blanks, fileStats) -> do
+        putStrLn separator
         printf (dataFormat' lang files lines' code comments blanks)
+
+        when byFile $ do
+          putStrLn separator
+          mapM_
+            ( \(fp, fLines, fCode, fComments, fBlanks) ->
+                printf (fileFormat' fp fLines fCode fComments fBlanks)
+            )
+            fileStats
     )
     aggregated
 
@@ -173,24 +203,9 @@ countLinesInDirs langMap exclude' dirs = do
   allFiles <- concat <$> mapM (getFilesRecursively exclude') dirs
   mapM (processFile langMap) allFiles
 
-formatStatistics :: [FileStats] -> IO ()
-formatStatistics stats = do
-  -- let totalLines = foldl' (+) 0 (map lineCount stats)
-  -- let totalComments = foldl' (+) 0 (map commentLineCount stats)
-  -- let totalBlank = foldl' (+) 0 (map blankLineCount stats)
-
-  printStatsTable stats
-
--- let boldSeparator = replicate 100 '━'
--- -- let separator = replicate 32 '─'
-
--- putStrLn boldSeparator
-
--- PP.printTable stat
-
--- putStrLn boldSeparator
-
--- mapM_ (print . Data.Aeson.encode) stats
--- putStrLn boldSeparator
--- mapM_ (print . Data.YAML.encode) [stats]
--- putStrLn boldSeparator
+formatStatistics :: [FileStats] -> Bool -> ExportType -> IO ()
+formatStatistics stats printByFile exportType = do
+  case exportType of
+    Tabular -> printStatsTable printByFile stats
+    Json -> B.putStr (Data.Aeson.encode stats)
+    Yaml -> B.putStr (Data.YAML.encode stats)
