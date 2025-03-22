@@ -4,7 +4,7 @@ module Main where
 
 import Languages (decodeJsonFile, languages, transformMap)
 import Options.Applicative
-import Statistics (countLinesInDirs)
+import Statistics (countLinesInDirs, formatStatistics)
 import Text.Read (readMaybe)
 
 data ExportType = JSON | CBOR deriving (Show, Read, Eq)
@@ -64,7 +64,9 @@ main = do
       let langMap = transformMap (languages l)
       let excludePaths = exclude opts
       let dirs = filePaths opts
-      countLinesInDirs langMap excludePaths dirs
+
+      results <- countLinesInDirs langMap excludePaths dirs
+      formatStatistics results
   where
     optsParser =
       info

@@ -27,9 +27,10 @@ executable lc
         filepath,
         bytestring,
         aeson,
+        HsYAML,
         containers,
-        unordered-containers,
-        regex-tdfa
+        regex-tdfa,
+        tuple
 
     hs-source-dirs:   app
 

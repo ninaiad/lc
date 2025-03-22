@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Languages (LanguageInfo (..), languages, decodeJsonFile, transformMap) where
 
@@ -10,7 +11,6 @@ import Data.Aeson
     (.:),
     (.:?),
   )
-import Data.Aeson.Key (fromString)
 import qualified Data.ByteString.Lazy as B
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
@@ -32,9 +32,9 @@ data LanguageInfo = LanguageInfo
 instance FromJSON Language where
   parseJSON = withObject "Language" $ \v ->
     Language
-      <$> v .:? fromString "name"
-      <*> (v .:? fromString "lineComment" .!= [])
-      <*> v .: fromString "extensions"
+      <$> v .:? "name"
+      <*> (v .:? "lineComment" .!= [])
+      <*> v .: "extensions"
 
 newtype Languages = Languages
   { languages :: M.Map String Language
@@ -44,7 +44,7 @@ newtype Languages = Languages
 instance FromJSON Languages where
   parseJSON = withObject "Languages" $ \v ->
     Languages
-      <$> v .: fromString "languages"
+      <$> v .: "languages"
 
 decodeJsonFile :: FilePath -> IO (Either String Languages)
 decodeJsonFile path = do
