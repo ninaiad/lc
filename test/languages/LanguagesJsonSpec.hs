@@ -3,7 +3,6 @@
 import qualified Data.Map as M
 import Languages
 import System.Directory (removeFile)
-import System.IO (writeFile)
 import Test.HUnit (assertEqual, assertFailure)
 import Test.Hspec
 
@@ -17,8 +16,8 @@ withTempFile content action = do
 
 main :: IO ()
 main = hspec $ do
-  describe "parse languages.json" $ do
-    it "parses file correctly" $ do
+  describe "Parse languages.json" $ do
+    it "Parses file correctly" $ do
       let content =
             "{\"languages\":{\
             \\"Abap\":{\"name\":\"ABAP\",\"lineComment\":[\"*\",\"\\\\\\\"\"],\"extensions\":[\"abap\"]},\

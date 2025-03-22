@@ -5,7 +5,7 @@ module Main where
 import Data.Char (toLower, toUpper)
 import Languages (decodeJsonFile, languages, transformMap)
 import Options.Applicative
-import Statistics (ExportType (..), countLinesInDirs, formatStatistics)
+import Statistics (ExportType (..), countLines, doPrint)
 import Text.Read (readMaybe)
 
 data CliOptions = CliOptions
@@ -58,17 +58,17 @@ main = do
   case result of
     Left err -> putStrLn $ "Error: " ++ err
     Right l -> do
-      let langMap = transformMap (languages l)
+      let usingLanguages = transformMap (languages l)
       let excludePaths = exclude opts
-      let dirs = filePaths opts
-      let printByFIle = byFile opts
-      let exportType' = exportType opts
+      let inDirs = filePaths opts
+      let byFile' = byFile opts
+      let withExportType' = exportType opts
       let includeHidden' = includeHidden opts
 
-      results <- countLinesInDirs langMap excludePaths includeHidden' dirs
-      formatStatistics results printByFIle exportType'
+      statistics <- countLines inDirs usingLanguages excludePaths includeHidden'
+      doPrint statistics byFile' withExportType'
   where
     optsParser =
       info
         (cliOptionsParser <**> helper)
-        (fullDesc <> progDesc "A command line tool to get file statistics")
+        (fullDesc <> progDesc "A command line tool to get files statistics")

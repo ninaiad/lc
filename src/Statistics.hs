@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Statistics (countLines, countLinesInDirs, formatStatistics, ExportType (..)) where
+module Statistics (countLines, countLinesInFile, doPrint, ExportType (..)) where
 
 import Conduit
 import Control.Monad (filterM, when)
@@ -36,6 +36,95 @@ data FileStats = FileStats
   }
   deriving (Data, Show, Generic)
 
+--------------------------------------------------------------------------------------
+
+{- Computing file statistics -}
+
+aggregate :: [FileStats] -> [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])]
+aggregate stats =
+  let grouped = groupBy (\a b -> languageName a == languageName b) $ sortOn languageName stats
+   in map
+        ( \group ->
+            let lang = fromMaybe "Unknown" (languageName (head group))
+                numFiles = length group
+                totalLines = sum (map lineCount group)
+                totalCode = sum (map (\fs -> lineCount fs - commentLineCount fs - blankLineCount fs) group)
+                totalComments = sum (map commentLineCount group)
+                totalBlanks = sum (map blankLineCount group)
+                fileDetails = [(filePath fs, lineCount fs, lineCount fs - commentLineCount fs - blankLineCount fs, commentLineCount fs, blankLineCount fs) | fs <- group]
+             in (lang, numFiles, totalLines, totalCode, totalComments, totalBlanks, fileDetails)
+        )
+        grouped
+
+countLinesInFile :: FilePath -> [String] -> [(String, String)] -> IO (Int, Int, Int)
+countLinesInFile file commentPrefixes multiLineComments =
+  withFile file ReadMode $ \handle -> do
+    (total, comments, blank, _) <-
+      runConduit $
+        sourceHandle handle
+          .| mapC C8.unpack
+          .| linesUnboundedC
+          .| mapC C8.pack
+          .| foldlC processLine (0, 0, 0, Nothing)
+    return (total, comments, blank)
+  where
+    processLine :: (Int, Int, Int, Maybe (Int, String)) -> C8.ByteString -> (Int, Int, Int, Maybe (Int, String))
+    processLine (total, comments, blank, multiState) line =
+      let total' = total + 1
+          blanks' = if C8.null line then blank + 1 else blank
+          (comments', multiState') = updateCommentCounts line commentPrefixes multiLineComments comments multiState
+       in (total', comments', blanks', multiState')
+
+updateCommentCounts :: C8.ByteString -> [String] -> [(String, String)] -> Int -> Maybe (Int, String) -> (Int, Maybe (Int, String))
+updateCommentCounts line commentPrefixes multiLineComments comments multiState =
+  case multiState of
+    Just (count, endMarker) ->
+      if C8.pack endMarker `C8.isInfixOf` line
+        then (comments + count + 1, Nothing)
+        else (comments, Just (count + 1, endMarker))
+    Nothing ->
+      case find (\(openMarker, _) -> C8.pack openMarker `C8.isPrefixOf` line) multiLineComments of
+        Just (_, closeMarker) -> (comments, Just (1, closeMarker))
+        Nothing ->
+          if any ((`C8.isPrefixOf` line) . C8.pack) commentPrefixes
+            then (comments + 1, Nothing)
+            else (comments, Nothing)
+
+getFilesRecursively :: Maybe String -> Bool -> FilePath -> IO [FilePath]
+getFilesRecursively excludePattern includeHidden inDir = do
+  contents <- listDirectory inDir
+  let visibleContents = if includeHidden then contents else filter (not . isHidden) contents
+      paths = map (inDir </>) visibleContents
+  files <- filterM doesFileExist paths
+  dirs <- filterM doesDirectoryExist paths
+  let filteredFiles = case excludePattern of
+        Just pat -> filter (not . (=~ pat)) files
+        Nothing -> files
+  nestedFiles <- fmap concat (mapM (getFilesRecursively excludePattern includeHidden) dirs)
+  return $ filteredFiles ++ nestedFiles
+  where
+    isHidden ('.' : _) = True
+    isHidden _ = False
+
+processFile :: M.Map String LanguageInfo -> FilePath -> IO FileStats
+processFile langMap f = do
+  let ext = drop 1 (takeExtension f)
+      langInfo = M.lookup ext langMap
+      commentPrefixes = maybe [] lineComment' langInfo
+      multiLineComment' = maybe [] multiLineComment langInfo
+      langName = fmap name' langInfo
+  (c, p, b) <- countLinesInFile f commentPrefixes multiLineComment'
+  return (FileStats f c p b langName)
+
+countLines :: [FilePath] -> M.Map String LanguageInfo -> Maybe String -> Bool -> IO [FileStats]
+countLines dirs langMap exclude' includeHidden = do
+  allFiles <- concat <$> mapM (getFilesRecursively exclude' includeHidden) dirs
+  mapM (processFile langMap) allFiles
+
+--------------------------------------------------------------------------------------
+
+{- Formatting, printing -}
+
 instance ToJSON FileStats where
   toEncoding = genericToEncoding defaultOptions
 
@@ -53,22 +142,6 @@ instance ToYAML FileStats where
              )
             ln
       ]
-
-aggregateStats :: [FileStats] -> [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])]
-aggregateStats stats =
-  let grouped = groupBy (\a b -> languageName a == languageName b) $ sortOn languageName stats
-   in map
-        ( \group ->
-            let lang = fromMaybe "Unknown" (languageName (head group))
-                numFiles = length group
-                totalLines = sum (map lineCount group)
-                totalCode = sum (map (\fs -> lineCount fs - commentLineCount fs - blankLineCount fs) group)
-                totalComments = sum (map commentLineCount group)
-                totalBlanks = sum (map blankLineCount group)
-                fileDetails = [(filePath fs, lineCount fs, lineCount fs - commentLineCount fs - blankLineCount fs, commentLineCount fs, blankLineCount fs) | fs <- group]
-             in (lang, numFiles, totalLines, totalCode, totalComments, totalBlanks, fileDetails)
-        )
-        grouped
 
 computeWidths :: [(String, Int, Int, Int, Int, Int, [(FilePath, Int, Int, Int, Int)])] -> Bool -> (Int, Int, Int, Int, Int, Int)
 computeWidths rows byFile =
@@ -137,9 +210,9 @@ fileFormat pathW lineW codeW comW blankW filepath lines' code comments =
     comments
     blankW
 
-printStatsTable :: Bool -> [FileStats] -> IO ()
-printStatsTable byFile stats = do
-  let aggregated = aggregateStats stats
+printTable :: [FileStats] -> Bool -> IO ()
+printTable statistics byFile = do
+  let aggregated = aggregate statistics
       (langW, fileW, lineW, codeW, comW, blankW) = computeWidths aggregated byFile
       totalFiles = sum [f | (_, f, _, _, _, _, _) <- aggregated]
       totalLines = sum [l | (_, _, l, _, _, _, _) <- aggregated]
@@ -154,7 +227,7 @@ printStatsTable byFile stats = do
   printf (headerFormat langW fileW lineW codeW comW blankW)
 
   let dataFormat' = dataFormat langW fileW lineW codeW comW blankW
-  let fileFormat' = fileFormat (langW + fileW) lineW codeW comW blankW
+      fileFormat' = fileFormat (langW + fileW) lineW codeW comW blankW
 
   mapM_
     ( \(lang, files, lines', code, comments, blanks, fileStats) -> do
@@ -175,74 +248,9 @@ printStatsTable byFile stats = do
   printf (dataFormat' "Total" totalFiles totalLines totalCode totalComments totalBlanks)
   putStrLn boldSeparator
 
-countLines :: FilePath -> [String] -> [(String, String)] -> IO (Int, Int, Int)
-countLines file commentPrefixes multiLineComments =
-  withFile file ReadMode $ \handle -> do
-    (total, comments, blank, _) <-
-      runConduit $
-        sourceHandle handle
-          .| mapC C8.unpack
-          .| linesUnboundedC
-          .| mapC C8.pack
-          .| foldlC processLine (0, 0, 0, Nothing)
-    return (total, comments, blank)
-  where
-    processLine :: (Int, Int, Int, Maybe (Int, String)) -> C8.ByteString -> (Int, Int, Int, Maybe (Int, String))
-    processLine (total, comments, blank, multiState) line =
-      let total' = total + 1
-          blank' = if C8.null line then blank + 1 else blank
-          (comments', multiState') = updateCommentCounts line commentPrefixes multiLineComments comments multiState
-       in (total', comments', blank', multiState')
-
-updateCommentCounts :: C8.ByteString -> [String] -> [(String, String)] -> Int -> Maybe (Int, String) -> (Int, Maybe (Int, String))
-updateCommentCounts line commentPrefixes multiLineComments comments multiState =
-  case multiState of
-    Just (count, endMarker) ->
-      if C8.pack endMarker `C8.isInfixOf` line
-        then (comments + count + 1, Nothing)
-        else (comments, Just (count + 1, endMarker))
-    Nothing ->
-      case find (\(openMarker, _) -> C8.pack openMarker `C8.isPrefixOf` line) multiLineComments of
-        Just (_, closeMarker) -> (comments, Just (1, closeMarker))
-        Nothing ->
-          if any ((`C8.isPrefixOf` line) . C8.pack) commentPrefixes
-            then (comments + 1, Nothing)
-            else (comments, Nothing)
-
-getFilesRecursively :: Maybe String -> Bool -> FilePath -> IO [FilePath]
-getFilesRecursively excludePattern includeHidden dir = do
-  contents <- listDirectory dir
-  let visibleContents = if includeHidden then contents else filter (not . isHidden) contents
-      paths = map (dir </>) visibleContents
-  files <- filterM doesFileExist paths
-  dirs <- filterM doesDirectoryExist paths
-  let filteredFiles = case excludePattern of
-        Just pat -> filter (not . (=~ pat)) files
-        Nothing -> files
-  nestedFiles <- fmap concat (mapM (getFilesRecursively excludePattern includeHidden) dirs)
-  return $ filteredFiles ++ nestedFiles
-  where
-    isHidden ('.' : _) = True
-    isHidden _ = False
-
-processFile :: M.Map String LanguageInfo -> FilePath -> IO FileStats
-processFile langMap f = do
-  let ext = drop 1 (takeExtension f)
-      langInfo = M.lookup ext langMap
-      commentPrefixes = maybe [] lineComment' langInfo
-      multiLineComment' = maybe [] multiLineComment langInfo
-      langName = fmap name' langInfo
-  (c, p, b) <- countLines f commentPrefixes multiLineComment'
-  return (FileStats f c p b langName)
-
-countLinesInDirs :: M.Map String LanguageInfo -> Maybe String -> Bool -> [FilePath] -> IO [FileStats]
-countLinesInDirs langMap exclude' includeHidden dirs = do
-  allFiles <- concat <$> mapM (getFilesRecursively exclude' includeHidden) dirs
-  mapM (processFile langMap) allFiles
-
-formatStatistics :: [FileStats] -> Bool -> ExportType -> IO ()
-formatStatistics stats printByFile exportType = do
+doPrint :: [FileStats] -> Bool -> ExportType -> IO ()
+doPrint statistics byFile exportType = do
   case exportType of
-    Tabular -> printStatsTable printByFile stats
-    Json -> BSL.putStr (Data.Aeson.encode stats)
-    Yaml -> BSL.putStr (Data.YAML.encode stats)
+    Tabular -> printTable statistics byFile
+    Json -> BSL.putStr (Data.Aeson.encode statistics)
+    Yaml -> BSL.putStr (Data.YAML.encode statistics)
