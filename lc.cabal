@@ -1,41 +1,125 @@
-cabal-version:      3.0
+cabal-version: 1.12
 
-name:               lc
-version:            0.1.0.0
-license:            MIT
-license-file:       LICENSE
-author:             Nina Gulevich
-maintainer:         nina.m.gulevich@gmail.com
-build-type:         Simple
-extra-doc-files:    CHANGELOG.md
+-- This file has been generated from package.yaml by hpack version 0.38.0.
+--
+-- see: https://github.com/sol/hpack
 
-common warnings
-    ghc-options: -Wall
+name:           lc
+version:        0.1.0.0
+homepage:       https://github.com/ninaiad/lc#readme
+bug-reports:    https://github.com/ninaiad/lc/issues
+author:         Nina
+maintainer:     nina.m.gulevich@gmail.com
+copyright:      2025 ninaiad
+license:        MIT
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+
+source-repository head
+  type: git
+  location: https://github.com/ninaiad/lc
+
+library
+  exposed-modules:
+      Languages
+      Statistics
+  other-modules:
+      Paths_lc
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      HsYAML
+    , aeson
+    , aeson-pretty
+    , base
+    , bytestring
+    , conduit
+    , containers
+    , directory
+    , filepath
+    , optparse-applicative
+    , regex-tdfa
+    , text
+    , tuple
+  default-language: Haskell2010
 
 executable lc
-    import:           warnings
+  main-is: Main.hs
+  other-modules:
+      Paths_lc
+  hs-source-dirs:
+      app
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HsYAML
+    , aeson
+    , aeson-pretty
+    , base
+    , bytestring
+    , conduit
+    , containers
+    , directory
+    , filepath
+    , lc
+    , optparse-applicative
+    , regex-tdfa
+    , text
+    , tuple
+  default-language: Haskell2010
 
-    main-is:          Main.hs
+test-suite count-lines-test
+  type: exitcode-stdio-1.0
+  main-is: CountLinesSpec.hs
+  other-modules:
+      Paths_lc
+  hs-source-dirs:
+      test/count-lines
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , HsYAML
+    , aeson
+    , aeson-pretty
+    , base
+    , bytestring
+    , conduit
+    , containers
+    , directory
+    , filepath
+    , hspec
+    , lc
+    , optparse-applicative
+    , regex-tdfa
+    , text
+    , tuple
+  default-language: Haskell2010
 
-    other-modules:
-        Languages,
-        Statistics
-
-    build-depends:
-        aeson,
-        aeson-pretty,
-        base,
-        bytestring,
-        conduit,
-        containers,
-        directory,
-        filepath,
-        HsYAML,
-        optparse-applicative,
-        regex-tdfa,
-        text,
-        tuple
-
-    hs-source-dirs:   app
-
-    default-language: Haskell2010
+test-suite languages-json-test
+  type: exitcode-stdio-1.0
+  main-is: LanguagesJsonSpec.hs
+  other-modules:
+      Paths_lc
+  hs-source-dirs:
+      test/languages
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      HUnit
+    , HsYAML
+    , aeson
+    , aeson-pretty
+    , base
+    , bytestring
+    , conduit
+    , containers
+    , directory
+    , filepath
+    , hspec
+    , lc
+    , optparse-applicative
+    , regex-tdfa
+    , text
+    , tuple
+  default-language: Haskell2010

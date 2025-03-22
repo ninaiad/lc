@@ -3,7 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Statistics (countLinesInDirs, formatStatistics, ExportType (..)) where
+module Statistics (countLines, countLinesInDirs, formatStatistics, ExportType (..)) where
 
 import Conduit
 import Control.Monad (filterM, when)

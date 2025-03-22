@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Languages (LanguageInfo (..), languages, decodeJsonFile, transformMap) where
+module Languages (Languages (..), Language (..), LanguageInfo (..), decodeJsonFile, transformMap) where
 
 import Data.Aeson
   ( FromJSON (parseJSON),
@@ -22,14 +22,14 @@ data Language = Language
     multiLineComments :: [(String, String)],
     extensions :: [String]
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 data LanguageInfo = LanguageInfo
   { name' :: String,
     lineComment' :: [String],
     multiLineComment :: [(String, String)]
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
 instance FromJSON Language where
   parseJSON = withObject "Language" $ \v ->
@@ -42,7 +42,7 @@ instance FromJSON Language where
 newtype Languages = Languages
   { languages :: M.Map String Language
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance FromJSON Languages where
   parseJSON = withObject "Languages" $ \v ->

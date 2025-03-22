@@ -1,0 +1,75 @@
+name:                lc
+version:             0.1.0.0
+github:              "ninaiad/lc"
+license:             MIT
+author:              "Nina"
+maintainer:          "nina.m.gulevich@gmail.com"
+copyright:           "2025 ninaiad"
+
+extra-source-files:
+- README.md
+
+dependencies:
+- aeson
+- aeson-pretty
+- base
+- bytestring
+- conduit
+- containers
+- directory
+- filepath
+- HsYAML
+- optparse-applicative
+- regex-tdfa
+- text
+- tuple
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-export-lists
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+
+library:
+  source-dirs: src
+
+executables:
+  lc:
+    main:                Main.hs
+    source-dirs:         app
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - lc
+
+tests:
+  count-lines-test:
+    main:                CountLinesSpec.hs
+    source-dirs:         test/count-lines
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - lc
+    - hspec
+    - HUnit
+
+  languages-json-test:
+    main:                LanguagesJsonSpec.hs
+    source-dirs:         test/languages
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - lc
+    - hspec
+    - HUnit
