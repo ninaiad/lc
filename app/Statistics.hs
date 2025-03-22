@@ -2,17 +2,16 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ViewPatterns #-}
 
 module Statistics (countLinesInDirs, formatStatistics, ExportType (..)) where
 
+import Conduit
 import Control.Monad (filterM, when)
 import Data.Aeson (ToJSON (..), defaultOptions, encode, genericToEncoding)
-import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C8
 import qualified Data.ByteString.Lazy as BSL
 import Data.Data (Data)
-import Data.List (groupBy, sortOn)
+import Data.List (find, groupBy, sortOn)
 import qualified Data.Map as M
 import Data.Maybe (fromMaybe)
 import qualified Data.Text as T
@@ -22,6 +21,7 @@ import GHC.Generics (Generic)
 import Languages (LanguageInfo (..))
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
 import System.FilePath (takeExtension, (</>))
+import System.IO (IOMode (ReadMode), withFile)
 import Text.Printf (printf)
 import Text.Regex.TDFA ((=~))
 
@@ -176,36 +176,38 @@ printStatsTable byFile stats = do
   putStrLn boldSeparator
 
 countLines :: FilePath -> [String] -> [(String, String)] -> IO (Int, Int, Int)
-countLines file commentPrefixes multiLineComments = do
-  content <- B.readFile file
-  let linesList = C8.lines content
-      total = length linesList
-      comments = length $ filter (\(C8.unpack -> line) -> any ((`C8.isPrefixOf` C8.pack line) . C8.pack) commentPrefixes) linesList
-      blank = length $ filter C8.null linesList
-      multilineCount = countMultiline linesList multiLineComments
-  return (total, comments + multilineCount, blank)
+countLines file commentPrefixes multiLineComments =
+  withFile file ReadMode $ \handle -> do
+    (total, comments, blank, _) <-
+      runConduit $
+        sourceHandle handle
+          .| mapC C8.unpack
+          .| linesUnboundedC
+          .| mapC C8.pack
+          .| foldlC processLine (0, 0, 0, Nothing)
+    return (total, comments, blank)
+  where
+    processLine :: (Int, Int, Int, Maybe (Int, String)) -> C8.ByteString -> (Int, Int, Int, Maybe (Int, String))
+    processLine (total, comments, blank, multiState) line =
+      let total' = total + 1
+          blank' = if C8.null line then blank + 1 else blank
+          (comments', multiState') = updateCommentCounts line commentPrefixes multiLineComments comments multiState
+       in (total', comments', blank', multiState')
 
-countMultiline :: [C8.ByteString] -> [(String, String)] -> Int
-countMultiline [] _ = 0
-countMultiline (l : ls) multiLineComments =
-  case findMultiline l ls multiLineComments of
-    Just (count, rest) -> count + countMultiline rest multiLineComments
-    Nothing -> countMultiline ls multiLineComments
-
-findMultiline :: C8.ByteString -> [C8.ByteString] -> [(String, String)] -> Maybe (Int, [C8.ByteString])
-findMultiline _ [] _ = Nothing
-findMultiline startLine rest multiLineComments =
-  case [(open, close) | (open, close) <- multiLineComments, C8.pack open `C8.isPrefixOf` startLine] of
-    ((_, close) : _) ->
-      let (count, remaining) = spanUntil (C8.pack close) (startLine : rest)
-       in Just (count, remaining)
-    [] -> Nothing
-
-spanUntil :: C8.ByteString -> [C8.ByteString] -> (Int, [C8.ByteString])
-spanUntil _ [] = (0, [])
-spanUntil end (l : ls)
-  | end `C8.isInfixOf` l = (1, ls)
-  | otherwise = let (c, rest) = spanUntil end ls in (1 + c, rest)
+updateCommentCounts :: C8.ByteString -> [String] -> [(String, String)] -> Int -> Maybe (Int, String) -> (Int, Maybe (Int, String))
+updateCommentCounts line commentPrefixes multiLineComments comments multiState =
+  case multiState of
+    Just (count, endMarker) ->
+      if C8.pack endMarker `C8.isInfixOf` line
+        then (comments + count + 1, Nothing)
+        else (comments, Just (count + 1, endMarker))
+    Nothing ->
+      case find (\(openMarker, _) -> C8.pack openMarker `C8.isPrefixOf` line) multiLineComments of
+        Just (_, closeMarker) -> (comments, Just (1, closeMarker))
+        Nothing ->
+          if any ((`C8.isPrefixOf` line) . C8.pack) commentPrefixes
+            then (comments + 1, Nothing)
+            else (comments, Nothing)
 
 getFilesRecursively :: Maybe String -> Bool -> FilePath -> IO [FilePath]
 getFilesRecursively excludePattern includeHidden dir = do

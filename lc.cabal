@@ -26,6 +26,7 @@ executable lc
         aeson-pretty,
         base,
         bytestring,
+        conduit,
         containers,
         directory,
         filepath,
