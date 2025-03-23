@@ -37,7 +37,7 @@ instance FromJSON Language where
       <$> v .:? "name"
       <*> (v .:? "lineComment" .!= [])
       <*> (v .:? "multiLineComments" .!= [])
-      <*> v .: "extensions"
+      <*> (v .:? "extensions" .!= [])
 
 newtype Languages = Languages
   { languages :: M.Map String Language
