@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE LambdaCase #-}
@@ -69,7 +70,7 @@ countLinesInFile file commentPrefixes multiLineComments =
     return (total, comments, blank)
   where
     processLine :: (Int, Int, Int, Maybe (Int, String)) -> C8.ByteString -> (Int, Int, Int, Maybe (Int, String))
-    processLine (total, comments, blank, multiState) line =
+    processLine (!total, !comments, !blank, !multiState) line =
       let total' = total + 1
           blanks' = if C8.null line then blank + 1 else blank
           (comments', multiState') = updateCommentCounts line commentPrefixes multiLineComments comments multiState
